@@ -33,10 +33,11 @@ func Test_getTimeKeyPartitionMinute(t *testing.T) {
 
 func Test_s3Reader_getObjectPrefixForTime(t *testing.T) {
 	type args struct {
-		s3Prefix      string
-		s3Partition   string
-		filePrefix    string
-		telemetryType string
+		s3Prefix            string
+		s3Partition         string
+		filePrefix          string
+		telemetryType       string
+		s3CustomPathPattern string
 	}
 	tests := []struct {
 		name string
@@ -123,14 +124,26 @@ func Test_s3Reader_getObjectPrefixForTime(t *testing.T) {
 			},
 			want: "//raw///year=2021/month=02/day=01/hour=17/minute=32/filelogs_",
 		},
+		{
+			name: "custom path pattern",
+			args: args{
+				s3Prefix:            "prefix",
+				s3Partition:         "minute",
+				filePrefix:          "file",
+				telemetryType:       "logs",
+				s3CustomPathPattern: "{{.prefix}}/{{.year}}/{{ printf \"%02d\" .month }}/{{ printf \"%02d\" .day }}/{{.hour}}/{{ printf \"%02d\" .minute}}/{{.filePrefix}}",
+			},
+			want: "prefix/2021/02/01/17/32/file",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			reader := s3TimeBasedReader{
-				logger:      zap.NewNop(),
-				s3Prefix:    test.args.s3Prefix,
-				s3Partition: test.args.s3Partition,
-				filePrefix:  test.args.filePrefix,
+				logger:              zap.NewNop(),
+				s3Prefix:            test.args.s3Prefix,
+				s3Partition:         test.args.s3Partition,
+				filePrefix:          test.args.filePrefix,
+				s3CustomPathPattern: test.args.s3CustomPathPattern,
 			}
 			result := reader.getObjectPrefixForTime(testTime, test.args.telemetryType)
 			require.Equal(t, test.want, result)

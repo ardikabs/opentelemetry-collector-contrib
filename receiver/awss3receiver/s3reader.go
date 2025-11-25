@@ -4,10 +4,12 @@
 package awss3receiver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awss3receiver"
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -17,15 +19,16 @@ import (
 type s3TimeBasedReader struct {
 	logger *zap.Logger
 
-	listObjectsClient ListObjectsAPI
-	getObjectClient   GetObjectAPI
-	s3Bucket          string
-	s3Prefix          string
-	s3Partition       string
-	filePrefix        string
-	startTime         time.Time
-	endTime           time.Time
-	notifier          statusNotifier
+	listObjectsClient   ListObjectsAPI
+	getObjectClient     GetObjectAPI
+	s3Bucket            string
+	s3Prefix            string
+	s3Partition         string
+	s3CustomPathPattern string
+	filePrefix          string
+	startTime           time.Time
+	endTime             time.Time
+	notifier            statusNotifier
 }
 
 func newS3TimeBasedReader(ctx context.Context, notifier statusNotifier, logger *zap.Logger, cfg *Config) (*s3TimeBasedReader, error) {
@@ -46,16 +49,17 @@ func newS3TimeBasedReader(ctx context.Context, notifier statusNotifier, logger *
 	}
 
 	return &s3TimeBasedReader{
-		logger:            logger,
-		listObjectsClient: listObjectsClient,
-		getObjectClient:   getObjectClient,
-		s3Bucket:          cfg.S3Downloader.S3Bucket,
-		s3Prefix:          cfg.S3Downloader.S3Prefix,
-		filePrefix:        cfg.S3Downloader.FilePrefix,
-		s3Partition:       cfg.S3Downloader.S3Partition,
-		startTime:         startTime,
-		endTime:           endTime,
-		notifier:          notifier,
+		logger:              logger,
+		listObjectsClient:   listObjectsClient,
+		getObjectClient:     getObjectClient,
+		s3Bucket:            cfg.S3Downloader.S3Bucket,
+		s3Prefix:            cfg.S3Downloader.S3Prefix,
+		s3Partition:         cfg.S3Downloader.S3Partition,
+		s3CustomPathPattern: cfg.S3Downloader.S3CustomPathPattern,
+		filePrefix:          cfg.S3Downloader.FilePrefix,
+		startTime:           startTime,
+		endTime:             endTime,
+		notifier:            notifier,
 	}, nil
 }
 
@@ -161,18 +165,51 @@ func (s3Reader *s3TimeBasedReader) getObjectPrefixForTime(t time.Time, telemetry
 	// Retrieve the configured S3 prefix (may be empty, "/", "//", "logs/", etc.)
 	prefix := s3Reader.s3Prefix
 
+	// Normal prefix (e.g., "logs", "logs/", "/logs/", "//raw//")
+	format := "%s/%s/%s%s_"
+	args := []any{prefix, timeKey, s3Reader.filePrefix, telemetryType}
+
+	switch {
+	case s3Reader.s3CustomPathPattern != "":
+		tmpl, err := template.New("s3path").Parse(s3Reader.s3CustomPathPattern)
+		if err != nil {
+			break
+		}
+
+		year, month, day := t.Date()
+		hour, minute, _ := t.Clock()
+
+		data := map[string]any{
+			"prefix":        prefix,
+			"filePrefix":    s3Reader.filePrefix,
+			"telemetryType": telemetryType,
+			"year":          year,
+			"month":         int(month),
+			"day":           day,
+			"hour":          hour,
+			"minute":        minute,
+		}
+
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, data); err != nil {
+			break
+		}
+
+		return buf.String()
+
 	// Case 1: No prefix provided → use only timeKey + filePrefix
-	if prefix == "" {
-		return fmt.Sprintf("%s/%s%s_", timeKey, s3Reader.filePrefix, telemetryType)
-	}
+	case prefix == "":
+		format = "%s/%s%s_"
+		args = []any{timeKey, s3Reader.filePrefix, telemetryType}
+
 	// Case 2: Prefix contains only slashes (e.g., "/", "//", "///")
 	// Keep the exact number of slashes and directly append timeKey without adding an extra "/"
-	if strings.Trim(prefix, "/") == "" {
-		return fmt.Sprintf("%s%s/%s%s_", prefix, timeKey, s3Reader.filePrefix, telemetryType)
+	case strings.Trim(prefix, "/") == "":
+		format = "%s%s/%s%s_"
+		args = []any{prefix, timeKey, s3Reader.filePrefix, telemetryType}
 	}
-	// Case 3: Normal prefix (e.g., "logs", "logs/", "/logs/", "//raw//")
-	// Always add a "/" between prefix and timeKey to build a valid S3 path
-	return fmt.Sprintf("%s/%s/%s%s_", prefix, timeKey, s3Reader.filePrefix, telemetryType)
+
+	return fmt.Sprintf(format, args...)
 }
 
 func (s3Reader *s3TimeBasedReader) sendStatus(ctx context.Context, status statusNotification) {
