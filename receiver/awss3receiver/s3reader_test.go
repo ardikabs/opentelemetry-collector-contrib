@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -241,6 +242,68 @@ func Test_readTelemetryForTime(t *testing.T) {
 	})
 	require.Contains(t, dataCallbackKeys, testKey1)
 	require.Contains(t, dataCallbackKeys, testKey2)
+	require.NoError(t, err)
+}
+
+func Test_readTelemetryForTime_Gzip_and_Custom_Path_Pattern(t *testing.T) {
+	testKey1 := "2021/02/01/17/32.log-objectH5UnOBVC"
+	testKey2 := "2021/02/01/17/32.log-objectH5UnOBVE"
+	reader := s3TimeBasedReader{
+		listObjectsClient: mockListObjectsAPI(func(params *s3.ListObjectsV2Input) ListObjectsV2Pager {
+			t.Helper()
+			require.Equal(t, "bucket", *params.Bucket)
+			require.Equal(t, "2021/02/01/17/32.log-", *params.Prefix)
+
+			return &mockListObjectsV2Pager{
+				Pages: []*s3.ListObjectsV2Output{
+					{
+						Contents: []types.Object{
+							{
+								Key: &testKey1,
+							},
+						},
+					},
+					{
+						Contents: []types.Object{
+							{
+								Key: &testKey2,
+							},
+						},
+					},
+				},
+			}
+		}),
+		getObjectClient: mockGetObjectAPI(func(_ context.Context, params *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			t.Helper()
+			require.Equal(t, "bucket", *params.Bucket)
+			require.Contains(t, []string{testKey1, testKey2}, *params.Key)
+			return &s3.GetObjectOutput{
+				Body: io.NopCloser(bytes.NewReader([]byte("this is the body of the object"))),
+			}, nil
+		}),
+		logger:              zap.NewNop(),
+		s3Bucket:            "bucket",
+		s3Partition:         "minute",
+		s3Prefix:            "",
+		s3CustomPathPattern: "{{.year}}/{{ printf \"%02d\" .month }}/{{ printf \"%02d\" .day }}/{{.hour}}/{{ printf \"%02d\" .minute}}.log-",
+		fileFormat:          "gzip",
+		filePrefix:          "",
+		startTime:           testTime,
+		endTime:             testTime.Add(time.Minute),
+	}
+
+	dataCallbackKeys := make([]string, 0)
+
+	err := reader.readTelemetryForTime(t.Context(), testTime, "traces", func(_ context.Context, key string, data []byte) error {
+		t.Helper()
+		require.True(t, strings.HasSuffix(key, ".gz"))
+		require.Equal(t, "this is the body of the object", string(data))
+		dataCallbackKeys = append(dataCallbackKeys, key)
+
+		return nil
+	})
+	require.Contains(t, dataCallbackKeys, testKey1+".gz")
+	require.Contains(t, dataCallbackKeys, testKey2+".gz")
 	require.NoError(t, err)
 }
 

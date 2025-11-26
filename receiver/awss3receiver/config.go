@@ -21,6 +21,7 @@ type S3DownloaderConfig struct {
 	S3Prefix            string `mapstructure:"s3_prefix"`
 	S3Partition         string `mapstructure:"s3_partition"`
 	S3CustomPathPattern string `mapstructure:"s3_custom_path_pattern"`
+	FileFormat          string `mapstructure:"file_format"`
 	FilePrefix          string `mapstructure:"file_prefix"`
 	Endpoint            string `mapstructure:"endpoint"`
 	EndpointPartitionID string `mapstructure:"endpoint_partition_id"`
