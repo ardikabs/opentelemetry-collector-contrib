@@ -286,7 +286,8 @@ func Test_readTelemetryForTime_Gzip_and_Custom_Path_Pattern(t *testing.T) {
 		s3Partition:         "minute",
 		s3Prefix:            "",
 		s3CustomPathPattern: "{{.year}}/{{ printf \"%02d\" .month }}/{{ printf \"%02d\" .day }}/{{.hour}}/{{ printf \"%02d\" .minute}}.log-",
-		fileFormat:          "gzip",
+		fileCompression:     "gzip",
+		fileFormat:          "json",
 		filePrefix:          "",
 		startTime:           testTime,
 		endTime:             testTime.Add(time.Minute),
@@ -302,8 +303,8 @@ func Test_readTelemetryForTime_Gzip_and_Custom_Path_Pattern(t *testing.T) {
 
 		return nil
 	})
-	require.Contains(t, dataCallbackKeys, testKey1+".gz")
-	require.Contains(t, dataCallbackKeys, testKey2+".gz")
+	require.Contains(t, dataCallbackKeys, testKey1+".json.gz")
+	require.Contains(t, dataCallbackKeys, testKey2+".json.gz")
 	require.NoError(t, err)
 }
 

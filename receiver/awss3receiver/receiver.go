@@ -253,11 +253,12 @@ func (r *logsReceiver) processReceivedData(ctx context.Context, rcvr *awss3Recei
 		rcvr.logger.Warn("Unsupported file format", zap.String("key", key))
 		return nil
 	}
-	rcvr.logger.Debug("Processing log file", zap.String("key", key), zap.String("format", format))
+	rcvr.logger.Debug("Processing log file", zap.String("key", key), zap.String("format", format), zap.String("data", string(data)))
 	logs, err := unmarshaler.UnmarshalLogs(data)
 	if err != nil {
 		return err
 	}
+	rcvr.logger.Debug("Processed log file", zap.String("key", key), zap.String("format", format), zap.Any(key, logs))
 	obsCtx := rcvr.obsrecv.StartLogsOp(ctx)
 	err = r.consumer.ConsumeLogs(ctx, logs)
 	rcvr.obsrecv.EndLogsOp(obsCtx, format, logs.LogRecordCount(), err)
