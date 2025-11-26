@@ -25,6 +25,7 @@ type s3TimeBasedReader struct {
 	s3Prefix            string
 	s3Partition         string
 	s3CustomPathPattern string
+	fileCompression     string
 	fileFormat          string
 	filePrefix          string
 	startTime           time.Time
@@ -57,6 +58,7 @@ func newS3TimeBasedReader(ctx context.Context, notifier statusNotifier, logger *
 		s3Prefix:            cfg.S3Downloader.S3Prefix,
 		s3Partition:         cfg.S3Downloader.S3Partition,
 		s3CustomPathPattern: cfg.S3Downloader.S3CustomPathPattern,
+		fileCompression:     cfg.S3Downloader.FileCompression,
 		fileFormat:          cfg.S3Downloader.FileFormat,
 		filePrefix:          cfg.S3Downloader.FilePrefix,
 		startTime:           startTime,
@@ -148,7 +150,11 @@ func (s3Reader *s3TimeBasedReader) readTelemetryForTime(ctx context.Context, t t
 				s3Reader.logger.Debug("Retrieved telemetry", zap.String("key", *obj.Key))
 
 				key := *obj.Key
-				if s3Reader.fileFormat == "gzip" {
+				if s3Reader.fileFormat != "" {
+					key = fmt.Sprintf("%s.%s", key, s3Reader.fileFormat)
+				}
+
+				if s3Reader.fileCompression == "gzip" {
 					key = fmt.Sprintf("%s.gz", key)
 				}
 
